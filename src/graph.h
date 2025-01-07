@@ -74,7 +74,7 @@ public:
         circles[node_index].setPosition(sf::Vector2{position.x - radius, position.y - radius});
     }
 
-    void SplitByAxis() {
+    std::set<int> SplitByAxis() {
         float axis_x = static_cast<float>(rand()%20 - 10) / 10.0;
         float axis_y = static_cast<float>(rand()%20 - 10) / 10.0;
 
@@ -82,12 +82,10 @@ public:
 
     
         std::array<bool, N> left_partition;
-        std::array<bool, N> separator_added;
-        std::vector<int> separator;
+        std::set<int> separator;
 
         for (int i=0; i<N; ++i) {
             left_partition[i] = false;
-            separator_added[i] = false;
         }
         
 
@@ -112,34 +110,58 @@ public:
         for (int i=0; i<N; ++i) {
             if (left_partition[i]) {
                 for (const int& j: nodes[i].neighbors) {
-                    if (!left_partition[j] & !separator_added[j]) {
-                        separator_added[j] = true;
-                        separator.push_back(j);
-                        SetColor(j, sf::Color(0,200,250));
+                    if (!left_partition[j]) {
+                        separator.insert(j);
                     }
                 }
             }
         }
 
-        // improve separator -- abstract this out into a separate function so that it can be called multiple times?
-        // for now expand in specific direction, then we fix logic to balance out graph
+        std::set<int> new_separator = RefineSeparator(separator, &left_partition);
+        separator = new_separator;
+        
+        new_separator = RefineSeparator(separator, &left_partition);
+        separator = new_separator;
+
+        new_separator = RefineSeparator(separator, &left_partition);
+        separator = new_separator;
+
+        while (new_separator != separator) {
+            std::cout << "done" << "\n";
+            separator = new_separator;
+
+            for (int i=0; i<N; ++i) {
+                if (left_partition[i]) {
+                    SetColor(i, sf::Color::Green);
+                }
+            }
+
+            new_separator = RefineSeparator(separator, &left_partition);
+        }
+
+        return separator;
+    }
+
+    std::set<int> RefineSeparator(std::set<int> separator, std::array<bool, N>* left_partition) {
+        std::set<int> refined_separator;
+        refined_separator = separator;
+        std::array<bool, N> old_left_partition  = *left_partition;
 
         std::set<int> separator_neighbors;
         std::unordered_map<int, std::set<int>> neighbors_of_separator_neighbors;
 
         for (const int& i:separator) {
             for (const int& j:nodes[i].neighbors) {
-                if (left_partition[j]) {
-                    SetColor(j, sf::Color::Blue);
+                if ((*left_partition)[j]) {
+                    //SetColor(j, sf::Color::Blue);
                     // account for j being a nbr of separator, then init empty set of nbrs for j
                     separator_neighbors.insert(j);
                     neighbors_of_separator_neighbors.emplace(j, std::set<int>{});
                     
                     // populate nbrs of j in separator
                     for (const int& k: nodes[j].neighbors) {
-                        if (separator_added[k]) {
+                        if (separator.count(k) > 0) {
                             neighbors_of_separator_neighbors[j].insert(k);
-                            SetColor(j, sf::Color::Red);
                         }
                     }
                 }
@@ -158,7 +180,7 @@ public:
 
             // do this by looking at the nbrs, b, of i and calculating the intersection of the nbrs of b
             for (const int& b: nodes[i].neighbors) {
-                if (!left_partition[b])
+                if (!((*left_partition)[b]))
                     continue;
                 
                 if (!init) {
@@ -183,6 +205,8 @@ public:
 
                 separator_subset_removal_candidate[j].insert(i);
             }
+
+            
         }
 
 
@@ -192,15 +216,31 @@ public:
 
             int nbhd_size = 0;
             for (const int& j : nodes[i].neighbors) {
-                if (left_partition[j]) nbhd_size++;
+                if ((*left_partition)[j]) nbhd_size++;
             }
 
             if (separator_nodes_contained_in_nbd_of_i.size() > nbhd_size) {
+                // remove the curr separator nodes
                 for (const int& j : separator_nodes_contained_in_nbd_of_i) {
-                    SetColor(j, sf::Color(100, 50, 255));
+                    refined_separator.erase(j);
+                    (*left_partition)[j] = false;;
+                }
+
+                // insert their nbrs
+                for (const int& j : nodes[i].neighbors) {
+                    if ((old_left_partition)[j]) {
+                        refined_separator.insert(j);
+                        (*left_partition)[j] = true;
+                    }
                 }
             }
         }
+
+        for (const int& j : refined_separator) {
+            SetColor(j, sf::Color(50, 10, 250));
+        }
+
+        return refined_separator;
     }
 
     void SetColor(int node_index, sf::Color color) {
